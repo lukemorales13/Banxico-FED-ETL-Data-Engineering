@@ -25,40 +25,8 @@ COMMENT ON TABLE bronze.raw_observation IS
 
 -- silver
 
-CREATE TABLE IF NOT EXISTS silver.dim_series (
-    series_id   TEXT PRIMARY KEY,
-    source      TEXT NOT NULL CHECK (source IN ('banxico', 'fred')),
-    name        TEXT NOT NULL,
-    description TEXT NOT NULL,
-    unit        TEXT NOT NULL,
-    frequency   TEXT NOT NULL,
-    calendar    TEXT NOT NULL,
-    source_url  TEXT NOT NULL
-);
-COMMENT ON TABLE silver.dim_series IS
-    'One row per series. Describes what each series is; see docs/DATA_SOURCES.md for the justification.';
-
-INSERT INTO silver.dim_series (series_id, source, name, description, unit, frequency, calendar, source_url)
-VALUES
-    ('SF43718', 'banxico', 'usd_mxn_fix',
-     'USD/MXN exchange rate for settling USD obligations payable in Mexico (FIX), determination date',
-     'MXN per USD', 'daily', 'banking business days',
-     'https://www.banxico.org.mx/SieAPIRest/service/v1/series/SF43718'),
-    ('SF61745', 'banxico', 'banxico_target_rate',
-     'Target set by Banco de Mexico for the overnight interbank funding rate',
-     'percent', 'daily', 'all days (observed)',
-     'https://www.banxico.org.mx/SieAPIRest/service/v1/series/SF61745'),
-    ('DFF', 'fred', 'fed_funds_effective',
-     'Effective federal funds rate: weighted average overnight rate between depository institutions',
-     'percent', 'daily', 'all days',
-     'https://fred.stlouisfed.org/series/DFF')
-ON CONFLICT (series_id) DO UPDATE SET
-    source = EXCLUDED.source, name = EXCLUDED.name, description = EXCLUDED.description,
-    unit = EXCLUDED.unit, frequency = EXCLUDED.frequency, calendar = EXCLUDED.calendar,
-    source_url = EXCLUDED.source_url;
-
 CREATE TABLE IF NOT EXISTS silver.observation (
-    series_id  TEXT          NOT NULL REFERENCES silver.dim_series (series_id),
+    series_id  TEXT          NOT NULL,
     obs_date   DATE          NOT NULL,   -- the common key across both providers
     value      NUMERIC(12,4) NOT NULL,
     loaded_at  TIMESTAMPTZ   NOT NULL DEFAULT now(),
