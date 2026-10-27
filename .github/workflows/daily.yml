@@ -1,0 +1,27 @@
+name: daily-pipeline
+
+on:
+  schedule:
+    - cron: "0 12 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: daily-pipeline
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python run_pipeline.py
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          BANXICO_TOKEN: ${{ secrets.BANXICO_TOKEN }}
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}

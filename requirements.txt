@@ -3,3 +3,4 @@ numpy==2.5.4
 requests==2.34.2
 python-dotenv==1.2.4
 psycopg[binary]==3.3.6
+streamlit==1.66.1
