@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS bronze.raw_observation (
     series_id     TEXT        NOT NULL,
     obs_date_raw  TEXT        NOT NULL,   -- dd/mm/yyyy (Banxico) or yyyy-mm-dd (FRED)
     value_raw     TEXT,                   -- '18.6670', 'N/E', '.', untouched
-    run_id        TEXT        NOT NULL,   -- last run that saw this row
+    run_id        TEXT        NOT NULL,   -- run that last changed value_raw
     ingested_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (source, series_id, obs_date_raw)
 );
