@@ -20,6 +20,7 @@ UPSERT_BRONZE = """
     ON CONFLICT (source, series_id, obs_date_raw) DO UPDATE
     SET value_raw = EXCLUDED.value_raw, run_id = EXCLUDED.run_id, ingested_at = now()
     WHERE bronze.raw_observation.value_raw IS DISTINCT FROM EXCLUDED.value_raw
+    RETURNING 1
 """
 
 
@@ -73,9 +74,13 @@ def start_date(conn, series_id):
 
 
 def upsert_bronze(conn, run_id, source, series_id, rows):
+    # RETURNING gives a row only for inserts and changed values, so counting them gives the changes.
+    changed = 0
     with conn.cursor() as cur:
-        cur.executemany(UPSERT_BRONZE, [(source, series_id, d, v, run_id) for d, v in rows])
-    return len(rows)
+        for d, v in rows:
+            if cur.execute(UPSERT_BRONZE, (source, series_id, d, v, run_id)).fetchone():
+                changed += 1
+    return changed
 
 
 def extract(conn, run_id, today=None):
@@ -89,9 +94,9 @@ def extract(conn, run_id, today=None):
                 rows = fetch_banxico(session, token, s["id"], start, end)
             else:
                 rows = fetch_fred(session, api_key, s["id"], start, end)
-            n = upsert_bronze(conn, run_id, s["source"], s["id"], rows)
+            changed = upsert_bronze(conn, run_id, s["source"], s["id"], rows)
             conn.commit()
-            log.info("%s: %d rows received for %s to %s", s["id"], n, start, end)
+            log.info("%s: %d fetched, %d changed (window %s to %s)", s["id"], len(rows), changed, start, end)
 
 
 if __name__ == "__main__":
