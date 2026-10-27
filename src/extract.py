@@ -16,7 +16,8 @@ RETRYABLE = {429, 500, 502, 503, 504}
 
 UPSERT_BRONZE = """
     INSERT INTO bronze.raw_observation (source, series_id, obs_date_raw, value_raw, run_id)
-    VALUES (%s, %s, %s, %s, %s)
+    SELECT %s, %s, t.obs_date_raw, t.value_raw, %s
+    FROM unnest(%s::text[], %s::text[]) AS t(obs_date_raw, value_raw)
     ON CONFLICT (source, series_id, obs_date_raw) DO UPDATE
     SET value_raw = EXCLUDED.value_raw, run_id = EXCLUDED.run_id, ingested_at = now()
     WHERE bronze.raw_observation.value_raw IS DISTINCT FROM EXCLUDED.value_raw
@@ -74,13 +75,15 @@ def start_date(conn, series_id):
 
 
 def upsert_bronze(conn, run_id, source, series_id, rows):
+    # One statement per series: a row-by-row loop costs a round trip per row, which is slow on a remote database.
     # RETURNING gives a row only for inserts and changed values, so counting them gives the changes.
-    changed = 0
+    if not rows:
+        return 0
+    dates = [d for d, _ in rows]
+    values = [v for _, v in rows]
     with conn.cursor() as cur:
-        for d, v in rows:
-            if cur.execute(UPSERT_BRONZE, (source, series_id, d, v, run_id)).fetchone():
-                changed += 1
-    return changed
+        changed = cur.execute(UPSERT_BRONZE, (source, series_id, run_id, dates, values)).fetchall()
+    return len(changed)
 
 
 def extract(conn, run_id, today=None):
