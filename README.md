@@ -34,7 +34,7 @@ flowchart LR
 
 Bronze is the only layer with state. Its `run_id` and `ingested_at` record when a value last changed, not when
 it was last seen. The extract starts 7 days before the last date in silver for each series and fetches up to today,
-so a skipped run or a late publication is picked up on the next run.
+so a skipped run is caught up on the next run.
 
 ## Data model
 
@@ -77,8 +77,8 @@ analysis uses complete months only.
 and the run continues. The data has been clean so far, but the pipeline does not assume it will stay clean. A malformed
 row should not block the daily update, and it stays visible for review.
 
-**Raw text in bronze.** Values are stored as received. The probe found no missing markers between 2020 and 2026, but
-the API notes describe `N/E` (Banxico) and `.` (FRED) as markers for missing values. If we converted at extract time,
+**Raw text in bronze.** Values are stored as received. Banxico marks missing values as `N/E`, and the probe found none
+between 2020 and 2026. If we converted at extract time,
 we would have to decide what a marker means before we know how the transform should handle it. With the raw text, the
 transform applies the rule, and quarantine records any row the rule rejects.
 
@@ -87,8 +87,10 @@ duplicate rows, and a row is rewritten only when its value changes. This matters
 window grow. For this project, a full reload would also work.
 
 **Incremental window.** Each run starts 7 days before the last date stored in silver for each series and fetches up to
-today. Anything after that point is fetched, so a skipped run is caught up on the next one. The extra 7 days re-read
-recent values in case a source revises them. The DFF lag observed in this project was up to four days.
+today. Anything after that point is fetched, so a skipped run is caught up on the next one. The extra days are a
+safeguard for values that arrive late for a date inside that week. No such gap has been observed so far, and the
+re-reads in our runs changed no values. In a normal daily run the window fetches 20 to 25 rows across the three series
+(fewer when a banking holiday falls inside it).
 
 **GitHub Actions for scheduling.** The job runs from the repository, with no server to maintain, and its runs are
 listed and can be started by hand. Like the rest of the stack, it is simple and reproducible. Scheduled runs can start
@@ -137,6 +139,14 @@ is not committed.
 
 ## Reproduce locally
 
+Prerequisites:
+
+- Git.
+- Python 3.13. Check with `python --version`.
+- Docker Desktop, running. Check with `docker info`; if it returns an error, restart Docker Desktop and wait until it
+  reports that the engine is running.
+- A Banxico SIE token and a FRED API key.
+
 From the repository root:
 
 ```bash
@@ -149,6 +159,8 @@ pip install -r requirements.txt
 copy .env.example .env            # then edit .env with your values
 
 # 3. Postgres 16 in Docker (database banxico_fred_db, data kept in a named volume)
+#    Run this where docker-compose.yml is. If another copy of this repo already runs
+#    Postgres, stop it first (docker compose down in that copy): both use port 5432.
 docker compose up -d
 docker compose ps                 # wait until the db service is running
 

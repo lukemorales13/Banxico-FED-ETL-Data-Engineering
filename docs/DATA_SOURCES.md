@@ -37,7 +37,7 @@ The differential is `SF61745 − DFF`, in percentage points.
 
 **FRED** (`https://api.stlouisfed.org/fred/series/observations`)
 - Requires a 32-character `api_key`. `file_type=json` returns JSON.
-- Dates are `yyyy-mm-dd`. Missing values are `.`.
+- Dates are `yyyy-mm-dd`. Missing values are marked `.` in third-party notes; none appeared in our data.
 - The key travels in the URL, so the pipeline never logs URLs or raw exception text.
 
 Limits quoted by third parties (not checked against the official pages in this document): Banxico 80 requests per minute, FRED 120 per minute. The pipeline makes one request per series per run.
@@ -45,7 +45,7 @@ Limits quoted by third parties (not checked against the official pages in this d
 ## Incremental load
 
 - The first run fetches from 2020-01-01.
-- Later runs start 7 days before the last date stored in silver for each series and fetch up to today. Anything after that point is fetched, so a skipped run is caught up on the next one. The extra days re-read recent values in case a source revises them.
+- Later runs start 7 days before the last date stored in silver for each series and fetch up to today. Anything after that point is fetched, so a skipped run is caught up on the next one. The extra days are a safeguard for values that arrive late for a date inside that week. No such gap has been observed so far, and the re-reads in our runs changed no values.
 - Bronze upserts on `(source, series_id, obs_date_raw)`. A value is rewritten only when it changes.
 
 ## Data-quality checks
