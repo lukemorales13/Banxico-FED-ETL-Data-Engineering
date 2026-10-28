@@ -45,7 +45,7 @@ Limits quoted by third parties (not checked against the official pages in this d
 ## Incremental load
 
 - The first run fetches from 2020-01-01.
-- Later runs fetch from 30 days before the latest date in silver, up to today. This picks up late publications.
+- Later runs start 7 days before the last date stored in silver for each series and fetch up to today. Anything after that point is fetched, so a skipped run is caught up on the next one. The extra days re-read recent values in case a source revises them.
 - Bronze upserts on `(source, series_id, obs_date_raw)`. A value is rewritten only when it changes.
 
 ## Data-quality checks

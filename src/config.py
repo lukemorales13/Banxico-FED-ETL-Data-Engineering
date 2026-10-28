@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 START_DATE = "2020-01-01"
-LOOKBACK_DAYS = 30
+LOOKBACK_DAYS = 7
 
 FRESHNESS_DAYS = 7
 JOIN_MIN_SHARE = 0.99

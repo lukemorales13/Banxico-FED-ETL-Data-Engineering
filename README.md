@@ -33,8 +33,79 @@ flowchart LR
 | gold | Daily join on FIX dates, monthly aggregates, lag correlations | Rebuilt from silver in one transaction |
 
 Bronze is the only layer with state. Its `run_id` and `ingested_at` record when a value last changed, not when
-it was last seen. The extract reads the last date in silver and fetches from 30 days earlier, so a late
-publication is picked up on the next run.
+it was last seen. The extract starts 7 days before the last date in silver for each series and fetches up to today,
+so a skipped run or a late publication is picked up on the next run.
+
+## Data model
+
+Three schemas: `bronze`, `silver` and `gold`. The DDL is in [sql/01_schema.sql](sql/01_schema.sql). Row counts are
+from the run of 2026-10-27.
+
+| Table | Layer | Primary key | Granularity | Purpose | Rows |
+|---|---|---|---|---|---|
+| `bronze.raw_observation` | bronze | `(source, series_id, obs_date_raw)` | One row per source, series and date, as received | Raw text from the APIs, upserted on each run | 6,685 |
+| `silver.observation` | silver | `(series_id, obs_date)` | One row per series and calendar date | Typed, validated values. `obs_date` is the key shared by both sources | 6,685 |
+| `silver.quarantine` | silver | `(source, series_id, obs_date_raw)` | One row per bronze row that failed a rule | Rejected rows, with the first rule they failed | 0 |
+| `silver.dq_result` | silver | `(run_id, series_id, check_name)` | One row per run, series and check | Audit trail of the data-quality checks | 34 (17 per run, 2 runs) |
+| `gold.rates_daily` | gold | `obs_date` | One row per FIX business day | FIX and both rates on the same date. Missing rates stay null | 1,716 |
+| `gold.rates_monthly` | gold | `month_start` | One row per calendar month | Monthly averages and percentage change of the FIX. `is_complete` is false for the open month | 82 |
+| `gold.lag_correlation` | gold | `lag_months` | One row per lag, 0 to 6 | Pearson correlation of the differential lagged *k* months with the FIX change | 7 |
+
+## Architecture decisions
+
+**Postgres.** I know Postgres better than any other database, and I use it locally more than the others. Databricks was
+considered and set aside for delivery time, reproducibility and data volume: this data fits easily in Postgres. The
+same database runs locally in Docker and in Neon for the scheduled job. Only `DATABASE_URL` changes. GitHub Actions
+cannot reach a local database, so the daily run needs a cloud instance.
+
+**Streamlit.** Power BI and AI/BI were considered. I chose Streamlit for reproducibility: a reviewer runs the app with
+one Python command, without desktop software or an account. The dashboard reads the tables the pipeline writes, so the
+numbers on screen are the ones in the database, with no CSV export to keep in sync.
+
+**Python, SQL and Streamlit.** The case does not need big-data tools. Python, SQL and Streamlit keep the stack small and
+easy to reproduce.
+
+**Bronze, silver and gold.** Bronze keeps the values as the APIs send them and is the only layer that keeps state
+between runs. Silver and gold are rebuilt from bronze in one transaction on every run. A change to a validation rule
+applies to the full history, and a reprocess needs no new API calls.
+
+**Monthly analysis.** The target rate changes rarely: the probe counted 38 changes between 2020 and 2026. Daily
+variation is small, so a daily correlation would carry little information. Gold aggregates by month, and the lag
+analysis uses complete months only.
+
+**Quarantine instead of stopping.** A row that fails a rule goes to `silver.quarantine` with the first rule it failed,
+and the run continues. The data has been clean so far, but the pipeline does not assume it will stay clean. A malformed
+row should not block the daily update, and it stays visible for review.
+
+**Raw text in bronze.** Values are stored as received. The probe found no missing markers between 2020 and 2026, but
+the API notes describe `N/E` (Banxico) and `.` (FRED) as markers for missing values. If we converted at extract time,
+we would have to decide what a marker means before we know how the transform should handle it. With the raw text, the
+transform applies the rule, and quarantine records any row the rule rejects.
+
+**Upsert on the natural key.** Bronze upserts on `(source, series_id, obs_date_raw)`. Re-running the pipeline does not
+duplicate rows, and a row is rewritten only when its value changes. This matters more as the number of series and the
+window grow. For this project, a full reload would also work.
+
+**Incremental window.** Each run starts 7 days before the last date stored in silver for each series and fetches up to
+today. Anything after that point is fetched, so a skipped run is caught up on the next one. The extra 7 days re-read
+recent values in case a source revises them. The DFF lag observed in this project was up to four days.
+
+**GitHub Actions for scheduling.** The job runs from the repository, with no server to maintain, and its runs are
+listed and can be started by hand. Like the rest of the stack, it is simple and reproducible. Scheduled runs can start
+late; the first one ran about six hours after its slot.
+
+**Two providers.** Each rate comes from its own central bank: the FIX and the target rate from Banxico, the effective
+federal funds rate from the Fed through FRED. I did not find a daily Mexican policy rate on FRED (the search was not
+exhaustive), so FRED alone does not cover the question.
+
+**SQL with psycopg, not an ORM.** I know Postgres and SQL best. The pipeline runs a few fixed queries, and writing them
+directly keeps the upsert and the per-layer transactions visible. I did not benchmark against an ORM, so I do not claim
+SQL is faster.
+
+**One DDL file, not migrations.** The schema is a single SQL file that creates the tables if they do not exist, and it
+runs on every pipeline run. A migration tool keeps a numbered history of schema changes and applies each one once. For
+a small, new project one file is enough. The cost showed up when we removed `dim_series`: local and Neon both needed a
+manual `DROP`, and a migration would have recorded that change.
 
 ## Series
 
@@ -129,7 +200,26 @@ monthly FIX average. Correlation between the rate differential lagged *k* months
 With about 80 months, the approximate 95% bound is ±0.22. No lag is outside it, so this sample does not show a
 relationship between the differential and monthly FIX changes at any lag from 0 to 6. The sample is short, the
 differential is a target against an effective rate, and monthly FIX changes depend on many factors that this
-model does not include. See [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md) section 8.
+model does not include. See the limitations in [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md).
+
+## Use of AI
+
+The AI model Haiku 5.5, from Claude Code, was used for the implementation and documentation of this project. It
+sped up development and implementation, which left more time for data analysis and for the architecture. Using AI
+let me focus on the goals rather than the code. All of it was done under strict supervision, review and control of
+the development.
+
+## Dashboard
+
+Analysis tab: monthly USD/MXN FIX and differential on separate axes, and the lag correlations against the 95% bound.
+
+![Analysis](docs/evidence/dashboard_analysis1.png)
+![Analysis, details](docs/evidence/dashboard_analysis2.png)
+
+Data quality tab: the last five runs, the checks of the latest run, the quarantine and the coverage of silver.
+
+![Data quality](docs/evidence/dashboard_quality1.png)
+![Data quality, details](docs/evidence/dashboard_quality2.png)
 
 ## Repository layout
 
