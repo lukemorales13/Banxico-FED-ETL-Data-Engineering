@@ -94,7 +94,7 @@ re-reads in our runs changed no values. In a normal daily run the window fetches
 
 **GitHub Actions for scheduling.** The job runs from the repository, with no server to maintain, and its runs are
 listed and can be started by hand. Like the rest of the stack, it is simple and reproducible. Scheduled runs can start
-late; the first one ran about six hours after its slot.
+late, and one skipped. The first run ran about six hours after its slot, and the run for 28 October did not run at all. The job is idempotent, so a manual run is a safe backup.
 
 **Two providers.** Each rate comes from its own central bank: the FIX and the target rate from Banxico, the effective
 federal funds rate from the Fed through FRED. I did not find a daily Mexican policy rate on FRED (the search was not
@@ -178,7 +178,7 @@ The steps can also be run one at a time: `python -m src.extract`, `python -m src
 
 ## Daily automation
 
-[.github/workflows/daily.yml](.github/workflows/daily.yml) runs `run_pipeline.py` every day at 12:00 UTC and
+[.github/workflows/daily.yml](.github/workflows/daily.yml) runs `run_pipeline.py` every day at 00:00 UTC (18:00 in Mexico City) and
 can be started by hand from the Actions tab. It needs three repository secrets: `DATABASE_URL` (a cloud Postgres,
 since GitHub cannot reach `localhost`), `BANXICO_TOKEN` and `FRED_API_KEY`.
 

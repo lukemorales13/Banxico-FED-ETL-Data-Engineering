@@ -25,7 +25,7 @@ The differential is `SF61745 − DFF`, in percentage points.
 
 ## Calendars and joins
 
-- FIX has business days only. The target rate and DFF include weekends.
+- FIX has business days only. The target rate has rows on weekends. DFF has rows on weekends too, but the Fed's H.15 release is published on weekdays only, so the weekend DFF rows are probably carried-forward values, not published observations. The join uses FIX dates, so they do not enter the analysis.
 - The join spine is the FIX date. Each FIX date gets the rates for that same date. Nothing is filled forward.
 - The latest rows can be missing one side. DFF lags the FIX by one or more days because of publication. The missing value stays null.
 

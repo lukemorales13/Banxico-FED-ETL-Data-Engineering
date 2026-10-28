@@ -2,7 +2,9 @@ name: daily-pipeline
 
 on:
   schedule:
-    - cron: "0 12 * * *"
+    # 00:00 UTC is 18:00 in Mexico City, after the FIX (from 12:00), the target rate (Thursdays 13:00)
+    # and the H.15 release (weekdays 4:15 pm US Eastern, 20:15 UTC in October). Scheduled runs are best effort.
+    - cron: "0 0 * * *"
   workflow_dispatch:
 
 concurrency:
